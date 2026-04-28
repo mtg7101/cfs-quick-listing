@@ -95,6 +95,37 @@ button[disabled] { opacity: 0.6; cursor: progress; }
 .output.error { border-color: var(--danger); color: var(--danger); }
 .output.ok { border-color: var(--good); }
 
+.preview {
+  margin-top: 16px;
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+}
+.preview h3 { margin: 0 0 10px; font-size: 14px; }
+.diff {
+  display: grid;
+  grid-template-columns: 200px 1fr 1fr;
+  gap: 6px 14px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.diff .field { color: var(--muted); padding-top: 4px; }
+.diff .old, .diff .new {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.diff .new.changed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
+.diff .old.empty, .diff .new.empty { color: var(--muted); font-style: italic; }
+.diff-head {
+  display: contents;
+  font-weight: 600;
+  color: var(--fg);
+}
+.diff-head .col { padding: 2px 8px; font-size: 11px; color: var(--muted); }
+
 footer {
   display: flex;
   justify-content: space-between;

@@ -10,8 +10,8 @@
     <header>
       <h1>Quick Listing</h1>
       <p class="muted">
-        Hand a product to the Centerfire BigCommerce listing agent. The agent runs the full skill —
-        optimize, build payload, search, create or update — so this UI only needs the basics.
+        Hand a product to the Centerfire BigCommerce listing agent. The agent runs the full skill
+        — optimize, build payload, search, create or update — so this UI only needs the basics.
       </p>
     </header>
 
@@ -37,13 +37,21 @@
           </label>
           <label class="full">
             <span>Context for AI</span>
-            <textarea name="context" rows="5" placeholder="Genuine Swiss military surplus rucksack in M70 Alpenflage. Cotton canvas. Approx 17×19×4 in. Used military gear."></textarea>
+            <textarea name="context" rows="5" placeholder="Genuine Swiss military surplus rucksack in M70 Alpenflage. Cotton canvas. Approx 17×19×4 in."></textarea>
           </label>
           <div class="actions">
-            <button type="button" data-action="generate">Generate Preview</button>
-            <button type="button" data-action="publish" class="primary">Generate + Publish</button>
+            <button type="button" data-action="preview" class="primary">Generate Preview</button>
           </div>
         </form>
+
+        <div class="preview" id="create-preview" hidden>
+          <h3>Agent proposal</h3>
+          <div class="diff" id="create-diff"></div>
+          <div class="actions">
+            <button type="button" data-action="discard">Discard</button>
+            <button type="button" data-action="confirm" class="primary">Confirm &amp; Publish</button>
+          </div>
+        </div>
         <pre class="output" id="create-output" hidden></pre>
       </section>
 
@@ -55,36 +63,46 @@
             <input name="sku" required placeholder="ACC1606" />
           </label>
           <div class="actions">
-            <button type="button" data-action="query">Query</button>
+            <button type="button" data-action="query" class="primary">Query</button>
           </div>
         </form>
 
-        <form id="update-form" autocomplete="off" hidden>
-          <label>
-            <span>Title</span>
-            <input name="title" />
-          </label>
-          <label>
-            <span>SKU</span>
-            <input name="sku" readonly />
-          </label>
-          <label>
-            <span>UPC</span>
-            <input name="upc" />
-          </label>
-          <label>
-            <span>Price ($)</span>
-            <input name="price" type="number" step="0.01" min="0" />
-          </label>
-          <label class="full">
-            <span>Instructions / changes for the agent</span>
-            <textarea name="context" rows="4" placeholder="Drop the price to $4.99 and add a surplus condition note."></textarea>
-          </label>
-          <div class="actions">
-            <button type="button" data-action="generate">Generate Preview</button>
-            <button type="button" data-action="publish" class="primary">Generate + Publish</button>
+        <div id="update-shell" hidden>
+          <form id="update-form" autocomplete="off">
+            <label>
+              <span>SKU</span>
+              <input name="sku" readonly />
+            </label>
+            <label>
+              <span>Title (optional override)</span>
+              <input name="title" placeholder="Leave blank to let the agent decide" />
+            </label>
+            <label>
+              <span>UPC (optional override)</span>
+              <input name="upc" />
+            </label>
+            <label>
+              <span>Price (optional override)</span>
+              <input name="price" type="number" step="0.01" min="0" />
+            </label>
+            <label class="full">
+              <span>Tell the agent what to change</span>
+              <textarea name="context" rows="4" placeholder="Drop the price to $4.99 and add a surplus condition note in the description."></textarea>
+            </label>
+            <div class="actions">
+              <button type="button" data-action="preview" class="primary">Generate Preview</button>
+            </div>
+          </form>
+
+          <div class="preview" id="update-preview" hidden>
+            <h3>Old vs new</h3>
+            <div class="diff" id="update-diff"></div>
+            <div class="actions">
+              <button type="button" data-action="discard">Discard</button>
+              <button type="button" data-action="confirm" class="primary">Confirm &amp; Publish</button>
+            </div>
           </div>
-        </form>
+        </div>
         <pre class="output" id="lookup-output" hidden></pre>
       </section>
     </main>

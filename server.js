@@ -50,12 +50,15 @@ app.post('/api/listing', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'missing_title' });
   }
   const dryRun = req.body?.dryRun === true;
+  const skipOptimize = req.body?.skipOptimize === true;
+  const suppliedPayload = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : null;
   try {
     const output = await callAgent('publish_product_listing', {
       product,
       channel: defaultChannel(),
-      instructions: String(req.body?.instructions || '').trim(),
-      skip_optimize: false,
+      payload: suppliedPayload,
+      instructions: String(req.body?.instructions || req.body?.context || '').trim(),
+      skip_optimize: skipOptimize,
       dry_run: dryRun,
     });
     res.json({ ok: true, dry_run: dryRun, ...output });
@@ -88,12 +91,15 @@ app.post('/api/product/:sku/update', async (req, res) => {
   if (!sku) return res.status(400).json({ ok: false, error: 'missing_sku' });
   const product = { ...buildProduct({ ...req.body, sku }) };
   const dryRun = req.body?.dryRun === true;
+  const skipOptimize = req.body?.skipOptimize === true;
+  const suppliedPayload = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : null;
   try {
     const output = await callAgent('publish_product_listing', {
       product,
       channel: defaultChannel(),
-      instructions: String(req.body?.instructions || '').trim(),
-      skip_optimize: false,
+      payload: suppliedPayload,
+      instructions: String(req.body?.instructions || req.body?.context || '').trim(),
+      skip_optimize: skipOptimize,
       dry_run: dryRun,
     });
     res.json({ ok: true, dry_run: dryRun, ...output });
