@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CFS Quick Listing</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Quick Listing</h1>
+      <p class="muted">
+        Hand a product to the Centerfire BigCommerce listing agent. The agent runs the full skill —
+        optimize, build payload, search, create or update — so this UI only needs the basics.
+      </p>
+    </header>
+
+    <main>
+      <section class="card" id="create">
+        <h2>Create a product</h2>
+        <form id="create-form" autocomplete="off">
+          <label>
+            <span>Title</span>
+            <input name="title" required placeholder="Swiss M70 Alpenflage Small Rucksack" />
+          </label>
+          <label>
+            <span>SKU</span>
+            <input name="sku" required placeholder="ACC1606" />
+          </label>
+          <label>
+            <span>UPC</span>
+            <input name="upc" placeholder="634855284676" />
+          </label>
+          <label>
+            <span>Price ($)</span>
+            <input name="price" type="number" step="0.01" min="0" placeholder="5.99" />
+          </label>
+          <label class="full">
+            <span>Context for AI</span>
+            <textarea name="context" rows="5" placeholder="Genuine Swiss military surplus rucksack in M70 Alpenflage. Cotton canvas. Approx 17×19×4 in. Used military gear."></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" data-action="generate">Generate Preview</button>
+            <button type="button" data-action="publish" class="primary">Generate + Publish</button>
+          </div>
+        </form>
+        <pre class="output" id="create-output" hidden></pre>
+      </section>
+
+      <section class="card" id="lookup">
+        <h2>Update an existing product</h2>
+        <form id="lookup-form" autocomplete="off">
+          <label class="full">
+            <span>SKU to look up</span>
+            <input name="sku" required placeholder="ACC1606" />
+          </label>
+          <div class="actions">
+            <button type="button" data-action="query">Query</button>
+          </div>
+        </form>
+
+        <form id="update-form" autocomplete="off" hidden>
+          <label>
+            <span>Title</span>
+            <input name="title" />
+          </label>
+          <label>
+            <span>SKU</span>
+            <input name="sku" readonly />
+          </label>
+          <label>
+            <span>UPC</span>
+            <input name="upc" />
+          </label>
+          <label>
+            <span>Price ($)</span>
+            <input name="price" type="number" step="0.01" min="0" />
+          </label>
+          <label class="full">
+            <span>Instructions / changes for the agent</span>
+            <textarea name="context" rows="4" placeholder="Drop the price to $4.99 and add a surplus condition note."></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" data-action="generate">Generate Preview</button>
+            <button type="button" data-action="publish" class="primary">Generate + Publish</button>
+          </div>
+        </form>
+        <pre class="output" id="lookup-output" hidden></pre>
+      </section>
+    </main>
+
+    <footer>
+      <span>Agent: <code>cfs-product-listing-agent</code></span>
+      <span id="health-status">checking…</span>
+    </footer>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

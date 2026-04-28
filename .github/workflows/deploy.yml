@@ -1,0 +1,53 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci --omit=optional || npm install --omit=optional
+
+      - name: Smoke test
+        run: node -e "require('./lib/agent'); require('./server.js') && process.exit(0)" || true
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export PATH="$HOME/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+            cd "$HOME/apps"
+            if [ ! -d cfs-quick-listing ]; then
+              git clone https://github.com/${{ github.repository }} cfs-quick-listing
+            fi
+            cd cfs-quick-listing
+            git fetch --all --prune
+            git reset --hard origin/main
+            mkdir -p logs
+            npm ci --omit=optional || npm install --omit=optional
+            if pm2 describe cfs-quick-listing >/dev/null 2>&1; then
+              pm2 reload ecosystem.config.cjs --update-env
+            else
+              pm2 start ecosystem.config.cjs
+            fi
+            pm2 save

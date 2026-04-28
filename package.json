@@ -1,0 +1,18 @@
+{
+  "name": "cfs-quick-listing",
+  "version": "0.1.0",
+  "description": "Minimal payload-giver UI for the Centerfire product listing agent",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "google-auth-library": "^10.4.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
