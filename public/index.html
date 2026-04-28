@@ -35,6 +35,10 @@
             <span>Price ($)</span>
             <input name="price" type="number" step="0.01" min="0" placeholder="5.99" />
           </label>
+          <label>
+            <span>Wholesale Price ($) <small class="muted">(price list)</small></span>
+            <input name="wholesale_price" type="number" step="0.01" min="0" placeholder="Optional" />
+          </label>
           <label class="full">
             <span>Context for AI</span>
             <textarea name="context" rows="5" placeholder="Genuine Swiss military surplus rucksack in M70 Alpenflage. Cotton canvas. Approx 17×19×4 in."></textarea>
@@ -84,6 +88,10 @@
             <label>
               <span>Price (optional override)</span>
               <input name="price" type="number" step="0.01" min="0" />
+            </label>
+            <label>
+              <span>Wholesale Price ($) <small class="muted">(price list)</small></span>
+              <input name="wholesale_price" type="number" step="0.01" min="0" placeholder="Leave blank to skip" />
             </label>
             <label class="full">
               <span>Tell the agent what to change</span>

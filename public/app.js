@@ -18,8 +18,8 @@ const healthStatus = $('#health-status');
 
 // Cached agent proposals so the Confirm button can re-send the exact payload.
 const state = {
-  create: { payload: null, optimization: null },
-  update: { payload: null, optimization: null, existing: null, sku: '' },
+  create: { payload: null, optimization: null, wholesale: null },
+  update: { payload: null, optimization: null, existing: null, sku: '', wholesale: null },
 };
 
 const FIELD_LABELS = [
@@ -41,6 +41,7 @@ const FIELD_LABELS = [
   ['search_keywords', 'Search Keywords'],
   ['description', 'Listing Description'],
   ['custom_url', 'Custom URL'],
+  ['wholesale_price', 'Wholesale Price'],
 ];
 
 function formData(form) {
@@ -162,9 +163,13 @@ createForm.addEventListener('click', async (event) => {
       showOutput(createOutput, result.body, true);
       return;
     }
-    const payload = result.body?.payload || {};
+    const payload = { ...(result.body?.payload || {}) };
+    if (result.body?.wholesale && Number.isFinite(Number(result.body.wholesale.price))) {
+      payload.wholesale_price = Number(result.body.wholesale.price);
+    }
     state.create.payload = payload;
     state.create.optimization = result.body?.optimization || null;
+    state.create.wholesale = result.body?.wholesale || null;
     renderDiff(createDiff, {}, payload, { showOld: false });
     createPreviewBox.hidden = false;
   } finally {
@@ -291,9 +296,13 @@ updateForm.addEventListener('click', async (event) => {
       showOutput(lookupOutput, result.body, true);
       return;
     }
-    const payload = result.body?.payload || {};
+    const payload = { ...(result.body?.payload || {}) };
+    if (result.body?.wholesale && Number.isFinite(Number(result.body.wholesale.price))) {
+      payload.wholesale_price = Number(result.body.wholesale.price);
+    }
     state.update.payload = payload;
     state.update.optimization = result.body?.optimization || null;
+    state.update.wholesale = result.body?.wholesale || null;
     renderDiff(updateDiff, state.update.existing || {}, payload, { showOld: true });
     updatePreviewBox.hidden = false;
   } finally {
