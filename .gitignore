@@ -5,3 +5,8 @@ node_modules/
 .DS_Store
 .pm2/
 dist/
+
+# Service-account / credential files dropped on the host should never be committed.
+agent-invoker.json
+service-account*.json
+*-credentials.json
