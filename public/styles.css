@@ -102,10 +102,20 @@ main { display: grid; gap: 18px; min-width: 0; }
   padding: 12px 14px;
   background: var(--card);
   display: grid;
-  grid-template-columns: 32px 1fr;
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 10px 12px;
   position: relative;
-  overflow: hidden;
+}
+/* The accent stripe is the only thing that needs the rounded clip — the rest
+ * of the card should grow to fit text instead of cropping it. */
+.activity-card::before { border-radius: 10px 0 0 10px; }
+.activity-card .body { overflow-wrap: anywhere; }
+.activity-card .lede,
+.activity-card .proposal-quote,
+.activity-card .proposal-plan,
+.activity-card .proposal-changes li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .activity-card::before {
   content: '';

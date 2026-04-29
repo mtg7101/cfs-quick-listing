@@ -642,6 +642,26 @@ function logUiEvent(operation, lede, body) {
   renderEventCard({ operation: `ui:${operation}`, t: Date.now() }, 'ui', { lede, chips: '' }, body);
 }
 
+// Long, HTML-heavy fields aren't useful as raw text in the change list — show
+// a short summary instead and let the operator open the form-side diff for
+// the full body.
+const SUMMARIZE_FIELDS = new Set(['description', 'short_description', 'meta_description', 'search_keywords', 'custom_fields', 'images']);
+const HTML_TAG_RE = /<[^>]+>/g;
+
+function summarizeFieldValue(key, text) {
+  if (text === '—') return '—';
+  const plain = String(text).replace(HTML_TAG_RE, ' ').replace(/\s+/g, ' ').trim();
+  if (key === 'description' || key === 'short_description') {
+    const paragraphs = (String(text).match(/<p[\s>]/gi) || []).length;
+    if (paragraphs > 0) return `${paragraphs} paragraph${paragraphs === 1 ? '' : 's'} · ${plain.length} chars`;
+    return plain.length > 120 ? `${plain.slice(0, 120)}…` : plain;
+  }
+  if (key === 'meta_description' || key === 'search_keywords') {
+    return plain.length > 140 ? `${plain.slice(0, 140)}…` : plain;
+  }
+  return text;
+}
+
 // Diff two payloads down to a list of human-readable changes. Used when the
 // optimizer didn't produce its own `narrative.changes`.
 function computeChangedFields(oldObj, newObj) {
@@ -656,9 +676,11 @@ function computeChangedFields(oldObj, newObj) {
     if (before === after) continue;
     const labelEntry = FIELD_LABELS.find((entry) => entry[0] === key);
     const label = labelEntry ? labelEntry[1] : key.replace(/_/g, ' ');
-    if (before === '—') out.push(`Set <strong>${escapeHtml(label)}</strong> to <code>${escapeHtml(truncate(after, 80))}</code>`);
-    else if (after === '—') out.push(`Clear <strong>${escapeHtml(label)}</strong> (was <code>${escapeHtml(truncate(before, 60))}</code>)`);
-    else out.push(`<strong>${escapeHtml(label)}</strong>: <code>${escapeHtml(truncate(before, 50))}</code> → <code>${escapeHtml(truncate(after, 50))}</code>`);
+    const beforeShown = SUMMARIZE_FIELDS.has(key) ? summarizeFieldValue(key, before) : before;
+    const afterShown = SUMMARIZE_FIELDS.has(key) ? summarizeFieldValue(key, after) : after;
+    if (before === '—') out.push(`Set <strong>${escapeHtml(label)}</strong> to <code>${escapeHtml(truncate(afterShown, 140))}</code>`);
+    else if (after === '—') out.push(`Clear <strong>${escapeHtml(label)}</strong> (was <code>${escapeHtml(truncate(beforeShown, 100))}</code>)`);
+    else out.push(`<strong>${escapeHtml(label)}</strong>: <code>${escapeHtml(truncate(beforeShown, 90))}</code> → <code>${escapeHtml(truncate(afterShown, 90))}</code>`);
   }
   return out;
 }
