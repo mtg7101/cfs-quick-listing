@@ -35,6 +35,7 @@ const FIELD_LABELS = [
   ['sku', 'SKU'],
   ['price', 'Regular Price'],
   ['sale_price', 'Sale Price'],
+  ['retail_price', 'Retail Price'],
   ['condition', 'Condition'],
   ['is_visible', 'Visible'],
   ['categories', 'Categories'],
@@ -51,6 +52,9 @@ const FIELD_LABELS = [
   ['custom_url', 'Custom URL'],
   ['wholesale_price', 'Wholesale Price'],
 ];
+
+// Pending proposal cards keyed by scope so a re-preview replaces the prior one.
+const proposalCards = { create: null, update: null };
 
 function formData(form) {
   const data = {};
@@ -181,6 +185,14 @@ createForm.addEventListener('click', async (event) => {
     state.create.wholesale = result.body?.wholesale || null;
     renderDiff(createDiff, {}, payload, { showOld: false });
     createPreviewBox.hidden = false;
+    renderProposalCard('create', {
+      sku: data.sku,
+      narrative: result.body?.narrative || result.body?.optimization?.narrative || null,
+      payload,
+      existing: result.body?.existing_bc || null,
+      isUpdate: !!result.body?.is_update,
+      wholesale: result.body?.wholesale || null,
+    });
   } finally {
     setBusyAll(false);
   }
@@ -194,6 +206,7 @@ createPreviewBox.addEventListener('click', async (event) => {
     state.create.payload = null;
     state.create.optimization = null;
     createPreviewBox.hidden = true;
+    clearProposalCard('create');
     return;
   }
   if (btn.dataset.action !== 'confirm') return;
@@ -211,6 +224,7 @@ createPreviewBox.addEventListener('click', async (event) => {
     if (result.ok) {
       createPreviewBox.hidden = true;
       state.create.payload = null;
+      clearProposalCard('create');
     }
   } finally {
     setBusyAll(false);
@@ -317,6 +331,14 @@ updateForm.addEventListener('click', async (event) => {
     state.update.wholesale = result.body?.wholesale || null;
     renderDiff(updateDiff, state.update.existing || {}, payload, { showOld: true });
     updatePreviewBox.hidden = false;
+    renderProposalCard('update', {
+      sku: state.update.sku,
+      narrative: result.body?.narrative || result.body?.optimization?.narrative || null,
+      payload,
+      existing: state.update.existing || result.body?.existing_bc || null,
+      isUpdate: result.body?.is_update !== false,
+      wholesale: result.body?.wholesale || null,
+    });
   } finally {
     setBusyAll(false);
   }
@@ -330,6 +352,7 @@ updatePreviewBox.addEventListener('click', async (event) => {
     state.update.payload = null;
     state.update.optimization = null;
     updatePreviewBox.hidden = true;
+    clearProposalCard('update');
     return;
   }
   if (btn.dataset.action !== 'confirm') return;
@@ -347,6 +370,7 @@ updatePreviewBox.addEventListener('click', async (event) => {
     if (result.ok) {
       updatePreviewBox.hidden = true;
       state.update.payload = null;
+      clearProposalCard('update');
     }
   } finally {
     setBusyAll(false);
@@ -618,6 +642,128 @@ function logUiEvent(operation, lede, body) {
   renderEventCard({ operation: `ui:${operation}`, t: Date.now() }, 'ui', { lede, chips: '' }, body);
 }
 
+// Diff two payloads down to a list of human-readable changes. Used when the
+// optimizer didn't produce its own `narrative.changes`.
+function computeChangedFields(oldObj, newObj) {
+  const out = [];
+  const seen = new Set();
+  const fieldOrder = FIELD_LABELS.map(([k]) => k);
+  for (const key of fieldOrder) {
+    if (!(key in (newObj || {}))) continue;
+    seen.add(key);
+    const before = fmtValue((oldObj || {})[key]).text;
+    const after = fmtValue((newObj || {})[key]).text;
+    if (before === after) continue;
+    const labelEntry = FIELD_LABELS.find((entry) => entry[0] === key);
+    const label = labelEntry ? labelEntry[1] : key.replace(/_/g, ' ');
+    if (before === '—') out.push(`Set <strong>${escapeHtml(label)}</strong> to <code>${escapeHtml(truncate(after, 80))}</code>`);
+    else if (after === '—') out.push(`Clear <strong>${escapeHtml(label)}</strong> (was <code>${escapeHtml(truncate(before, 60))}</code>)`);
+    else out.push(`<strong>${escapeHtml(label)}</strong>: <code>${escapeHtml(truncate(before, 50))}</code> → <code>${escapeHtml(truncate(after, 50))}</code>`);
+  }
+  return out;
+}
+
+const CONFIDENCE_TONES = { high: 'pos', medium: '', low: 'neg' };
+
+function renderProposalCard(scope, { sku, narrative, payload, existing, isUpdate, wholesale }) {
+  // Replace any prior proposal card for the same scope so the user sees only
+  // the latest plan.
+  if (proposalCards[scope]) {
+    try { proposalCards[scope].remove(); } catch { /* already detached */ }
+    proposalCards[scope] = null;
+  }
+  const empty = activityFeed.querySelector('.activity-empty');
+  if (empty) empty.remove();
+
+  const understood = (narrative?.understood || '').trim();
+  const plan = (narrative?.plan || '').trim();
+  const confidence = (narrative?.confidence || '').toLowerCase();
+  let bullets = Array.isArray(narrative?.changes) ? narrative.changes.filter(Boolean) : [];
+  // Always derive a structural diff too, so the operator sees the actual
+  // field-level changes — not just the agent's prose summary.
+  const structural = computeChangedFields(existing || {}, payload || {});
+
+  const verb = isUpdate ? 'update' : 'new product';
+  const headline = isUpdate
+    ? `Plan to update <code>${escapeHtml(sku || '')}</code>`
+    : `Plan to publish <code>${escapeHtml(sku || '')}</code> as a new product`;
+
+  const card = document.createElement('div');
+  card.className = 'activity-card kind-proposal';
+  card.dataset.scope = scope;
+  const wholesaleChip = wholesale && Number.isFinite(Number(wholesale.price))
+    ? chip('Wholesale', fmtMoney(wholesale.price), 'pos')
+    : '';
+  const confidenceChip = confidence
+    ? chip('Confidence', confidence, CONFIDENCE_TONES[confidence] || '')
+    : '';
+  const fieldsChangedChip = chip('Fields changed', String(structural.length || bullets.length || 0));
+  const modeChip = chip('Mode', isUpdate ? 'Update' : 'Create');
+
+  card.innerHTML = `
+    <div class="icon">🤖</div>
+    <div class="body">
+      <div class="top">
+        <span class="title">Agent's plan</span>
+        <span class="badge">Awaiting your OK</span>
+      </div>
+      <div class="meta">
+        <time>${escapeHtml(fmtTime(Date.now()))}</time>
+        <span class="dot"></span>
+        <span>${escapeHtml(verb)}</span>
+      </div>
+      <div class="lede">${headline}</div>
+      ${understood ? `<div class="proposal-quote"><span class="proposal-label">Understood</span>${escapeHtml(understood)}</div>` : ''}
+      ${plan ? `<div class="proposal-plan"><span class="proposal-label">Plan</span>${escapeHtml(plan)}</div>` : ''}
+      ${(bullets.length || structural.length) ? `
+        <div class="proposal-changes">
+          <span class="proposal-label">What will change</span>
+          <ul>
+            ${(bullets.length ? bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('') : structural.map((b) => `<li>${b}</li>`).join(''))}
+          </ul>
+        </div>` : `
+        <div class="proposal-changes muted">
+          <span class="proposal-label">What will change</span>
+          <em>No structural changes detected. Confirming will resave the same payload.</em>
+        </div>`}
+      <div class="chips">${[modeChip, confidenceChip, fieldsChangedChip, wholesaleChip].filter(Boolean).join('')}</div>
+      <div class="proposal-actions">
+        <button type="button" class="ghost" data-proposal="discard">Discard</button>
+        <button type="button" class="primary" data-proposal="confirm">Confirm &amp; Publish</button>
+      </div>
+    </div>
+  `;
+  activityFeed.prepend(card);
+  proposalCards[scope] = card;
+
+  card.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-proposal]');
+    if (!btn) return;
+    event.preventDefault();
+    if (btn.dataset.proposal === 'discard') {
+      // Wire to the matching form-side discard so state stays consistent.
+      const target = scope === 'create'
+        ? createPreviewBox.querySelector('button[data-action="discard"]')
+        : updatePreviewBox.querySelector('button[data-action="discard"]');
+      if (target) target.click();
+      else { try { card.remove(); } catch { /* ignore */ } proposalCards[scope] = null; }
+    } else if (btn.dataset.proposal === 'confirm') {
+      const target = scope === 'create'
+        ? createPreviewBox.querySelector('button[data-action="confirm"]')
+        : updatePreviewBox.querySelector('button[data-action="confirm"]');
+      if (target) target.click();
+    }
+  });
+  return card;
+}
+
+function clearProposalCard(scope) {
+  if (proposalCards[scope]) {
+    try { proposalCards[scope].remove(); } catch { /* already detached */ }
+    proposalCards[scope] = null;
+  }
+}
+
 function setEventStatus(state, text) {
   eventStatus.dataset.state = state;
   eventStatus.textContent = text;
@@ -638,18 +784,13 @@ function connectEvents() {
     let data;
     try { data = JSON.parse(msg.data); } catch { return; }
     if (data.type === 'agent_call_start') {
-      renderEventCard(data, 'start', `→ ${summarizeStart(data)}`, data.input);
+      renderEventCard(data, 'start', describeStart(data), data.input);
     } else if (data.type === 'agent_retry') {
-      renderEventCard(
-        data,
-        'retry',
-        `↻ retry ${data.attempt} <code>${data.message ? truncate(data.message, 60) : data.status || ''}</code>`,
-        data,
-      );
+      renderEventCard(data, 'retry', describeRetry(data), data);
     } else if (data.type === 'agent_call_done') {
-      renderEventCard(data, 'done', `✓ ${summarizeDone(data)}`, data.output);
+      renderEventCard(data, 'done', describeDone(data), data.output);
     } else if (data.type === 'agent_call_error') {
-      renderEventCard(data, 'error', `✗ ${truncate(data.message || 'failed', 200)}`, data.body || data);
+      renderEventCard(data, 'error', describeError(data), data.body || data);
     }
   });
 }
