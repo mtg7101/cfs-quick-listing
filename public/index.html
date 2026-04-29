@@ -60,6 +60,28 @@
         <pre class="output" id="create-output" hidden></pre>
       </section>
 
+      <section class="card glow" id="batch">
+        <div class="card-head">
+          <div>
+            <h2>Bulk create · multi-agent</h2>
+            <p class="muted small">
+              Paste one product per line — <code>title | sku | upc | price | wholesale | context</code>.
+              The agent spawns one worker per row, runs them in parallel,
+              and shares brand &amp; category lookups across them.
+            </p>
+          </div>
+          <span class="pill" id="batch-mode">Idle</span>
+        </div>
+        <textarea id="batch-input" rows="6" placeholder="UZI MP2 Handguard | ACC1606 | 634855284676 | 5.99 | 3.50 | Genuine Swiss surplus rucksack
+Polish DPM Parts Kit | KIT0398 | 634855086171 | 1299 | | Polish Circle 11 Radom DPM kit"></textarea>
+        <div class="actions">
+          <button type="button" data-action="batch-preview">Preview Batch (dry run)</button>
+          <button type="button" data-action="batch-publish" class="primary">Run Batch · Publish All</button>
+        </div>
+        <div id="batch-grid" class="batch-grid" hidden></div>
+        <div id="batch-summary" class="batch-summary" hidden></div>
+      </section>
+
       <section class="card" id="lookup">
         <h2>Update an existing product</h2>
         <form id="lookup-form" autocomplete="off">

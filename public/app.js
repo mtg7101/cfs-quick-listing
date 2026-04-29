@@ -18,6 +18,11 @@ const healthStatus = $('#health-status');
 const activityFeed = $('#activity-feed');
 const eventStatus = $('#event-status');
 const eventClear = $('#event-clear');
+const batchSection = $('#batch');
+const batchInput = $('#batch-input');
+const batchMode = $('#batch-mode');
+const batchGrid = $('#batch-grid');
+const batchSummary = $('#batch-summary');
 
 // Cached agent proposals so the Confirm button can re-send the exact payload.
 const state = {
@@ -649,3 +654,191 @@ function connectEvents() {
   });
 }
 connectEvents();
+
+// ---------------- Bulk multi-agent batch ----------------
+
+function parseBatchInput(text) {
+  const products = [];
+  const lines = String(text || '').split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const parts = line.split('|').map((p) => p.trim());
+    const [title, sku, upc, price, wholesale, ...contextParts] = parts;
+    if (!sku && !title) continue;
+    products.push({
+      title: title || sku || '',
+      sku: sku || '',
+      upc: upc || '',
+      price: price ? Number(price) : null,
+      wholesale_price: wholesale ? Number(wholesale) : null,
+      context: contextParts.join(' | ').trim(),
+    });
+  }
+  return products;
+}
+
+function ensureRow(idx, product) {
+  let row = batchGrid.querySelector(`[data-row="${idx}"]`);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'batch-row';
+    row.dataset.row = String(idx);
+    row.dataset.status = 'pending';
+    row.innerHTML = `
+      <span class="row-index">${idx + 1}</span>
+      <div class="row-body">
+        <div class="row-title"></div>
+        <div class="row-meta"></div>
+      </div>
+      <span class="pill">Pending</span>
+    `;
+    batchGrid.appendChild(row);
+  }
+  if (product) {
+    row.querySelector('.row-title').textContent = product.title || product.sku || `Item ${idx + 1}`;
+    row.querySelector('.row-meta').textContent = [product.sku, product.upc, product.price ? `$${product.price}` : null].filter(Boolean).join(' · ');
+  }
+  return row;
+}
+
+function setRowStatus(idx, status, meta) {
+  const row = ensureRow(idx);
+  row.dataset.status = status;
+  const pill = row.querySelector('.pill');
+  pill.className = `pill ${status === 'running' ? 'running' : status === 'done' ? 'done' : status === 'error' ? 'error' : ''}`;
+  pill.textContent = status === 'running' ? 'Working' : status === 'done' ? 'Done' : status === 'error' ? 'Failed' : 'Pending';
+  if (meta) row.querySelector('.row-meta').textContent = meta;
+}
+
+function applyProgressUpdate(progress) {
+  if (!Array.isArray(progress)) return;
+  for (const slot of progress) {
+    if (typeof slot?.index !== 'number') continue;
+    const row = ensureRow(slot.index);
+    const status = slot.status || 'pending';
+    row.dataset.status = status;
+    const pill = row.querySelector('.pill');
+    pill.className = `pill ${status === 'running' ? 'running' : status === 'done' ? 'done' : status === 'error' ? 'error' : ''}`;
+    pill.textContent = status === 'running' ? 'Working' : status === 'done' ? 'Done' : status === 'error' ? 'Failed' : 'Pending';
+    const metaBits = [];
+    if (slot.sku) metaBits.push(slot.sku);
+    if (slot.mode) metaBits.push(slot.mode);
+    if (slot.external_product_id) metaBits.push(`#${slot.external_product_id}`);
+    if (slot.error) metaBits.push(`error: ${truncate(slot.error, 80)}`);
+    if (metaBits.length) row.querySelector('.row-meta').textContent = metaBits.join(' · ');
+  }
+}
+
+function renderSummary(summary) {
+  if (!summary) return;
+  batchSummary.hidden = false;
+  const completed = summary.completed || [];
+  const ok = completed.filter((c) => c.ok).length;
+  const failed = completed.length - ok;
+  batchSummary.innerHTML = `
+    <div class="row"><span>Run id</span><strong>${escapeHtml(summary.run_id || '—')}</strong></div>
+    <div class="row"><span>Items</span><strong>${summary.count ?? completed.length}</strong></div>
+    <div class="row"><span>Succeeded</span><strong>${ok}</strong></div>
+    <div class="row"><span>Failed</span><strong>${failed}</strong></div>
+    <div class="row"><span>Brand cache</span><strong>${Object.keys(summary.brand_cache || {}).length} entries</strong></div>
+  `;
+}
+
+async function runBatch(dryRun) {
+  const products = parseBatchInput(batchInput.value);
+  if (!products.length) {
+    batchMode.textContent = 'Add at least one row';
+    batchMode.className = 'pill error';
+    return;
+  }
+  batchGrid.hidden = false;
+  batchGrid.innerHTML = '';
+  batchSummary.hidden = true;
+  batchSummary.innerHTML = '';
+  products.forEach((p, i) => ensureRow(i, p));
+  batchMode.className = 'pill running';
+  batchMode.textContent = dryRun ? 'Previewing (multi-agent)' : 'Publishing (multi-agent)';
+
+  setBusyAll(true);
+  try {
+    const res = await fetch('/api/listing/batch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ products, dryRun }),
+    });
+    if (!res.ok || !res.body) {
+      batchMode.className = 'pill error';
+      batchMode.textContent = `HTTP ${res.status}`;
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let summary;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line || !line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        let event;
+        try { event = JSON.parse(payload); } catch { continue; }
+        if (event.type === 'started') {
+          batchMode.textContent = `${event.count} workers spinning up`;
+          continue;
+        }
+        if (event.type === 'closed') {
+          batchMode.className = 'pill done';
+          batchMode.textContent = 'Done';
+          continue;
+        }
+        if (event.type === 'error') {
+          batchMode.className = 'pill error';
+          batchMode.textContent = truncate(event.error || 'failed', 60);
+          continue;
+        }
+        if (event.type === 'summary') {
+          summary = event.summary;
+          renderSummary(summary);
+          if (summary?.progress) applyProgressUpdate(summary.progress);
+          continue;
+        }
+        if (event.type === 'event') {
+          const delta = event.state_delta || {};
+          if (Array.isArray(delta.progress)) applyProgressUpdate(delta.progress);
+          if (event.message) {
+            // Surface the agent's own narration as a UI log line.
+            renderEventCard(
+              { operation: `agent:${event.author || 'batch'}`, t: Date.now() },
+              'start',
+              { lede: escapeHtml(event.message), chips: '' },
+            );
+          }
+        }
+      }
+    }
+    if (!summary) {
+      batchMode.className = 'pill done';
+      batchMode.textContent = 'Stream ended';
+    }
+  } catch (err) {
+    batchMode.className = 'pill error';
+    batchMode.textContent = String(err?.message || err);
+  } finally {
+    setBusyAll(false);
+  }
+}
+
+batchSection.addEventListener('click', (event) => {
+  const btn = event.target.closest('button[data-action]');
+  if (!btn) return;
+  event.preventDefault();
+  if (btn.dataset.action === 'batch-preview') void runBatch(true);
+  else if (btn.dataset.action === 'batch-publish') void runBatch(false);
+});

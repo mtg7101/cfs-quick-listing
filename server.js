@@ -24,7 +24,7 @@ function loadDotenv(file) {
 loadDotenv(path.join(__dirname, '.env'));
 
 const express = require('express');
-const { callAgent, events } = require('./lib/agent');
+const { callAgent, streamAgent, events } = require('./lib/agent');
 
 const app = express();
 app.disable('x-powered-by');
@@ -189,6 +189,46 @@ app.get('/api/wholesale/:sku', async (req, res) => {
     res.json({ ok: true, ...output });
   } catch (err) {
     res.status(err.status || 500).json({ ok: false, error: err.message, body: err.body || null });
+  }
+});
+
+// Multi-agent batch: streams the BatchCoordinator → ParallelAgent →
+// BatchAggregator output back to the browser as Server-Sent Events. Each
+// chunk lands in the activity feed plus the bulk-create grid.
+app.post('/api/listing/batch', async (req, res) => {
+  const products = Array.isArray(req.body?.products) ? req.body.products : [];
+  if (!products.length) return res.status(400).json({ ok: false, error: 'no_products' });
+  const dryRun = req.body?.dryRun !== false;
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders?.();
+  const send = (event) => {
+    try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch { /* client gone */ }
+  };
+  const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+  req.on('close', () => clearInterval(ping));
+
+  send({ type: 'started', count: products.length, dryRun });
+  try {
+    const normalizedProducts = products.map((p, index) => buildProduct({ ...p, sku: p.sku || `item-${index}` }));
+    for await (const chunk of streamAgent('publish_product_batch_stream', {
+      products: normalizedProducts,
+      channel: defaultChannel(),
+      dry_run: dryRun,
+    })) {
+      send(chunk);
+    }
+    send({ type: 'closed' });
+  } catch (err) {
+    send({ type: 'error', error: err?.message || String(err) });
+  } finally {
+    clearInterval(ping);
+    res.end();
   }
 });
 
