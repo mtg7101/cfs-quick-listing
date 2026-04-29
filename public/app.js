@@ -364,110 +364,253 @@ updatePreviewBox.addEventListener('click', async (event) => {
 // ---------------- Live agent activity ----------------
 
 const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour12: false });
+const truncate = (value, max = 100) => {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+};
+const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function operationLabel(operation) {
-  const map = {
-    optimize_product_listing: 'Optimize listing',
-    build_product_payload: 'Build payload',
-    search_products: 'Search BigCommerce',
-    create_product: 'Create product',
-    update_product: 'Update product',
-    publish_product_listing: 'Publish flow',
-    list_price_lists: 'List price lists',
-    get_wholesale_price: 'Read wholesale price',
-    set_wholesale_price: 'Write wholesale price',
-  };
-  return map[operation] || operation;
+const OPERATION_PROFILES = {
+  publish_product_listing: { icon: '🛒', label: 'Listing flow' },
+  optimize_product_listing: { icon: '✍️', label: 'Writing the description' },
+  build_product_payload:    { icon: '📦', label: 'Preparing the payload' },
+  search_products:          { icon: '🔎', label: 'Searching BigCommerce' },
+  create_product:           { icon: '🆕', label: 'Adding new product' },
+  update_product:           { icon: '🔄', label: 'Saving product changes' },
+  list_price_lists:         { icon: '📋', label: 'Loading price lists' },
+  get_wholesale_price:      { icon: '💰', label: 'Reading wholesale price' },
+  set_wholesale_price:      { icon: '🏷️', label: 'Saving wholesale price' },
+  'ui:create.preview':      { icon: '👤', label: 'You · Generate Preview (new product)' },
+  'ui:create.confirm':      { icon: '👤', label: 'You · Confirm publish (new product)' },
+  'ui:update.query':        { icon: '👤', label: 'You · Look up SKU' },
+  'ui:update.preview':      { icon: '👤', label: 'You · Generate Preview (changes)' },
+  'ui:update.confirm':      { icon: '👤', label: 'You · Confirm publish (changes)' },
+};
+function profile(op) { return OPERATION_PROFILES[op] || { icon: '⚙️', label: op || 'Activity' }; }
+
+const KIND_BADGES = {
+  start: { label: 'Working' },
+  retry: { label: 'Retrying' },
+  done:  { label: 'Done' },
+  error: { label: 'Failed' },
+  ui:    { label: 'You' },
+};
+
+function chip(label, value, tone = '') {
+  if (value === undefined || value === null || value === '') return '';
+  const cls = tone ? ` ${tone}` : '';
+  return `<span class="chip${cls}">${escapeHtml(label)} <strong>${escapeHtml(value)}</strong></span>`;
 }
 
-function summarizeStart(event) {
+function fmtMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : null;
+}
+
+function describeStart(event) {
   const input = event.input || {};
   const product = input.product || {};
   const sku = product.sku || product.stock_number || input.sku;
   const op = event.operation;
-  const bits = [];
-  if (sku) bits.push(`SKU <code>${sku}</code>`);
-  if (op === 'publish_product_listing') {
-    bits.push(input.dry_run === false ? 'live publish' : 'dry run');
-    if (input.skip_optimize) bits.push('skip optimize');
-    if (input.wholesale_price != null && input.wholesale_price !== '') bits.push(`wholesale $${Number(input.wholesale_price).toFixed(2)}`);
-  } else if (op === 'set_wholesale_price') {
-    bits.push(`$${Number(input.wholesale_price).toFixed(2)} on list ${input.price_list_id || 2}`);
+  switch (op) {
+    case 'publish_product_listing':
+      if (input.dry_run === false) {
+        return {
+          lede: `Saving <code>${escapeHtml(sku || '')}</code> to BigCommerce${input.skip_optimize ? ' (using your reviewed payload)' : ' (with fresh AI optimization)'}.`,
+          chips: [
+            chip('Mode', 'Live publish', 'pos'),
+            input.skip_optimize ? chip('AI', 'skipped') : chip('AI', 'optimizing'),
+            input.wholesale_price ? chip('Wholesale', fmtMoney(input.wholesale_price)) : '',
+          ].filter(Boolean).join(''),
+        };
+      }
+      return {
+        lede: `Building a preview for <code>${escapeHtml(sku || '')}</code>. The agent will optimize copy, look up the channel, and merge changes — nothing is saved yet.`,
+        chips: [
+          chip('Mode', 'Preview only'),
+          input.skip_optimize ? chip('AI', 'skipped') : chip('AI', 'optimizing'),
+          input.instructions ? chip('You said', truncate(input.instructions, 50)) : '',
+        ].filter(Boolean).join(''),
+      };
+    case 'optimize_product_listing':
+      return { lede: `Asking Gemini to write the title, description, SEO copy, and tags${sku ? ` for <code>${escapeHtml(sku)}</code>` : ''}.`, chips: '' };
+    case 'build_product_payload':
+      return { lede: 'Composing the BigCommerce payload from the AI output and your existing data.', chips: '' };
+    case 'search_products':
+      return { lede: `Looking up SKU <code>${escapeHtml(input.sku || sku || '')}</code> on BigCommerce…`, chips: '' };
+    case 'list_price_lists':
+      return { lede: 'Fetching every price list the store has configured.', chips: '' };
+    case 'get_wholesale_price':
+      return { lede: `Reading the current wholesale price for <code>${escapeHtml(input.sku || '')}</code>.`, chips: '' };
+    case 'set_wholesale_price':
+      return {
+        lede: `Saving wholesale ${fmtMoney(input.wholesale_price)} for <code>${escapeHtml(input.sku || '')}</code>.`,
+        chips: chip('Price list', `#${input.price_list_id || 2}`),
+      };
+    case 'create_product':
+      return { lede: `Creating a brand-new product on BigCommerce${sku ? ` (<code>${escapeHtml(sku)}</code>)` : ''}.`, chips: '' };
+    case 'update_product':
+      return { lede: `Updating the existing BigCommerce product${sku ? ` for <code>${escapeHtml(sku)}</code>` : ''}.`, chips: '' };
+    default:
+      return { lede: 'Running an agent operation…', chips: '' };
   }
-  return bits.length ? bits.join(' · ') : 'Calling agent…';
 }
 
-function summarizeDone(event) {
+function describeDone(event) {
   const out = event.output || {};
   const op = event.operation;
-  const bits = [];
-  if (op === 'publish_product_listing') {
-    if (out.dry_run) bits.push('preview ready');
-    else if (out.mode) bits.push(`${out.mode} #${out.external_product_id || '?'}`);
-    if (out.optimization?.title) bits.push(`title: ${truncate(out.optimization.title, 80)}`);
-    if (Array.isArray(out.payload?.categories)) bits.push(`${out.payload.categories.length} categories`);
-    if (out.payload?.brand_id) bits.push(`brand id ${out.payload.brand_id}`);
-    if (out.wholesale && out.wholesale.price != null) {
-      bits.push(`wholesale $${Number(out.wholesale.price).toFixed(2)}${out.wholesale.ok === false ? ' (failed)' : ''}`);
+  const elapsed = event.duration_ms != null ? `${(event.duration_ms / 1000).toFixed(1)}s` : null;
+
+  const elapsedChip = elapsed ? chip('Took', elapsed) : '';
+
+  switch (op) {
+    case 'publish_product_listing': {
+      const opt = out.optimization || {};
+      if (out.dry_run) {
+        const titleSnippet = opt.title ? truncate(opt.title, 70) : null;
+        const lede = titleSnippet
+          ? `Preview ready. Proposed title: <strong>${escapeHtml(titleSnippet)}</strong>`
+          : 'Preview ready. Review the diff on the left before confirming.';
+        const cats = Array.isArray(out.payload?.categories) ? out.payload.categories.length : null;
+        return {
+          lede,
+          chips: [
+            chip('Categories', cats != null ? cats : null),
+            chip('Brand id', out.payload?.brand_id),
+            out.wholesale ? chip('Wholesale', fmtMoney(out.wholesale.price)) : '',
+            elapsedChip,
+          ].filter(Boolean).join(''),
+        };
+      }
+      const verb = out.mode === 'created' ? 'Created' : 'Updated';
+      const id = out.external_product_id ? `BigCommerce #${out.external_product_id}` : '';
+      return {
+        lede: `${verb} on BigCommerce. ${id ? `Live at ${escapeHtml(id)}.` : ''}`,
+        chips: [
+          chip('Mode', out.mode || 'updated'),
+          out.wholesale && out.wholesale.ok !== false ? chip('Wholesale', fmtMoney(out.wholesale.price), 'pos') : '',
+          out.wholesale && out.wholesale.ok === false ? chip('Wholesale', 'failed', 'neg') : '',
+          elapsedChip,
+        ].filter(Boolean).join(''),
+      };
     }
-  } else if (op === 'search_products') {
-    const products = out.products || [];
-    bits.push(`${products.length} match${products.length === 1 ? '' : 'es'}`);
-    if (products[0]?.id) bits.push(`#${products[0].id}`);
-  } else if (op === 'list_price_lists') {
-    bits.push(`${(out.price_lists || []).length} lists`);
-  } else if (op === 'get_wholesale_price') {
-    if (out.found) bits.push(`$${out.record?.price ?? '?'}`);
-    else bits.push('no record');
-  } else if (op === 'set_wholesale_price') {
-    bits.push(`list ${out.price_list_id} variant ${out.variant_id}`);
-  } else if (op === 'create_product' || op === 'update_product') {
-    bits.push(`#${out.external_product_id || '?'}`);
+    case 'search_products': {
+      const products = out.products || [];
+      const first = products[0];
+      if (!products.length) return { lede: 'No matching product on BigCommerce. Confirming will create a new one.', chips: elapsedChip };
+      return {
+        lede: `Found <strong>${escapeHtml(truncate(first.name || '', 80))}</strong> (BigCommerce #${first.id}).`,
+        chips: [
+          chip('Current price', fmtMoney(first.price)),
+          chip('Categories', Array.isArray(first.categories) ? first.categories.length : null),
+          elapsedChip,
+        ].filter(Boolean).join(''),
+      };
+    }
+    case 'optimize_product_listing':
+      return {
+        lede: out.title ? `New title proposed: <strong>${escapeHtml(truncate(out.title, 90))}</strong>` : 'AI returned an optimization.',
+        chips: [
+          out.condition ? chip('Condition', out.condition) : '',
+          Array.isArray(out.categories) ? chip('Categories', out.categories.length) : '',
+          out.brand_name ? chip('Brand', truncate(out.brand_name, 40)) : '',
+          elapsedChip,
+        ].filter(Boolean).join(''),
+      };
+    case 'build_product_payload':
+      return {
+        lede: 'Payload assembled and ready for BigCommerce.',
+        chips: [
+          out.payload?.sku ? chip('SKU', out.payload.sku) : '',
+          Array.isArray(out.payload?.categories) ? chip('Categories', out.payload.categories.length) : '',
+          elapsedChip,
+        ].filter(Boolean).join(''),
+      };
+    case 'list_price_lists':
+      return {
+        lede: `Found <strong>${(out.price_lists || []).length}</strong> price lists. Wholesale list id: <strong>${out.wholesale_price_list_id ?? '—'}</strong>.`,
+        chips: elapsedChip,
+      };
+    case 'get_wholesale_price':
+      return {
+        lede: out.found ? `Current wholesale: <strong>${fmtMoney(out.record?.price) ?? '—'}</strong>.` : 'No wholesale record exists for this SKU yet.',
+        chips: [chip('Variant id', out.variant_id), elapsedChip].filter(Boolean).join(''),
+      };
+    case 'set_wholesale_price':
+      return {
+        lede: out.ok === false ? 'Wholesale save failed.' : 'Wholesale price saved.',
+        chips: [
+          chip('Price list', `#${out.price_list_id}`),
+          chip('Variant id', out.variant_id),
+          elapsedChip,
+        ].filter(Boolean).join(''),
+      };
+    case 'create_product':
+    case 'update_product':
+      return {
+        lede: `${op === 'create_product' ? 'Created' : 'Updated'} BigCommerce #${out.external_product_id || '?'}.`,
+        chips: elapsedChip,
+      };
+    default:
+      return { lede: 'Done.', chips: elapsedChip };
   }
-  if (event.duration_ms != null) bits.push(`${(event.duration_ms / 1000).toFixed(2)}s`);
-  return bits.length ? bits.join(' · ') : 'done';
 }
 
-function truncate(value, max = 80) {
-  const text = String(value || '');
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+function describeRetry(event) {
+  const reason = event.status === 503 || /UNAVAILABLE/.test(event.message || '')
+    ? 'BigCommerce-agent gateway was busy.'
+    : 'Transient hiccup.';
+  return {
+    lede: `${reason} Retrying automatically (attempt ${event.attempt + 1}).`,
+    chips: chip('Status', event.status || '—'),
+  };
 }
 
-function renderEventCard(event, kind, summary, body) {
+function describeError(event) {
+  return {
+    lede: `Couldn't complete this step. ${truncate(event.message || 'Unknown error', 240)}`,
+    chips: chip('Status', event.status || '—', 'neg'),
+  };
+}
+
+function renderEventCard(event, kind, parts, body) {
+  const { icon, label } = profile(event.operation || event.type);
+  const badge = KIND_BADGES[kind] || { label: kind };
   const card = document.createElement('div');
   card.className = `activity-card kind-${kind}`;
-  const head = document.createElement('div');
-  head.className = 'head';
-  const opEl = document.createElement('span');
-  opEl.className = 'op';
-  opEl.textContent = operationLabel(event.operation || event.type);
-  const timeEl = document.createElement('span');
-  timeEl.className = 'time';
-  timeEl.textContent = fmtTime(event.t || Date.now());
-  head.append(opEl, timeEl);
-  card.appendChild(head);
-  const summaryEl = document.createElement('div');
-  summaryEl.className = 'summary';
-  summaryEl.innerHTML = summary;
-  card.appendChild(summaryEl);
+  card.innerHTML = `
+    <div class="icon">${icon}</div>
+    <div class="body">
+      <div class="top">
+        <span class="title">${escapeHtml(label)}</span>
+        <span class="badge">${escapeHtml(badge.label)}</span>
+      </div>
+      <div class="meta">
+        <time>${escapeHtml(fmtTime(event.t || Date.now()))}</time>
+        ${event.duration_ms != null ? `<span class="dot"></span><span>${(event.duration_ms / 1000).toFixed(1)}s</span>` : ''}
+        ${event.attempt ? `<span class="dot"></span><span>attempt ${event.attempt}</span>` : ''}
+      </div>
+      <div class="lede">${parts.lede || ''}</div>
+      ${parts.chips ? `<div class="chips">${parts.chips}</div>` : ''}
+    </div>
+  `;
   if (body) {
     const details = document.createElement('details');
     const summaryToggle = document.createElement('summary');
-    summaryToggle.textContent = 'Show payload';
+    summaryToggle.textContent = 'Inspect raw payload';
     const pre = document.createElement('pre');
     pre.textContent = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
     details.append(summaryToggle, pre);
-    card.appendChild(details);
+    card.querySelector('.body').appendChild(details);
   }
-  // Newest at top.
   const empty = activityFeed.querySelector('.activity-empty');
   if (empty) empty.remove();
   activityFeed.prepend(card);
   while (activityFeed.children.length > 60) activityFeed.lastChild.remove();
 }
 
-function logUiEvent(operation, summary, body) {
-  renderEventCard({ operation: `ui:${operation}`, t: Date.now() }, 'ui', summary, body);
+function logUiEvent(operation, lede, body) {
+  renderEventCard({ operation: `ui:${operation}`, t: Date.now() }, 'ui', { lede, chips: '' }, body);
 }
 
 function setEventStatus(state, text) {
