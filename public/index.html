@@ -15,6 +15,7 @@
       </p>
     </header>
 
+    <div class="layout">
     <main>
       <section class="card" id="create">
         <h2>Create a product</h2>
@@ -114,6 +115,20 @@
         <pre class="output" id="lookup-output" hidden></pre>
       </section>
     </main>
+
+    <aside class="activity">
+      <div class="activity-head">
+        <h2>Agent activity</h2>
+        <div class="activity-meta">
+          <span id="event-status" data-state="">connecting…</span>
+          <button type="button" id="event-clear" class="ghost">Clear</button>
+        </div>
+      </div>
+      <div class="activity-feed" id="activity-feed">
+        <div class="activity-empty">Run Generate Preview or Query to watch the agent work in real time.</div>
+      </div>
+    </aside>
+    </div>
 
     <footer>
       <span>Agent: <code>cfs-product-listing-agent</code></span>

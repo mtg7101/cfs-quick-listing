@@ -24,12 +24,111 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.4; }
-header, main, footer { max-width: 920px; margin: 0 auto; padding: 24px; }
+body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.4; min-height: 100vh; display: flex; flex-direction: column; }
+header { padding: 18px 24px 6px; max-width: 1480px; width: 100%; margin: 0 auto; }
 header h1 { margin: 0 0 4px; font-size: 22px; }
 .muted { color: var(--muted); font-size: 13px; margin: 0; }
+small.muted { font-size: 11px; }
 
-main { display: grid; gap: 18px; }
+.layout {
+  flex: 1;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 24px 24px;
+  align-items: start;
+}
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+}
+main { display: grid; gap: 18px; min-width: 0; }
+.activity {
+  position: sticky;
+  top: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px 6px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
+  min-width: 0;
+}
+.activity-head { display: flex; justify-content: space-between; align-items: baseline; }
+.activity h2 { margin: 0; font-size: 14px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+.activity-meta { display: inline-flex; gap: 10px; align-items: center; font-size: 11px; color: var(--muted); }
+.activity-meta button.ghost {
+  border: 1px solid var(--line);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.activity-meta button.ghost:hover { color: var(--accent); border-color: var(--accent); }
+#event-status { display: inline-flex; align-items: center; gap: 4px; }
+#event-status::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--muted) 25%, transparent);
+}
+#event-status[data-state="ok"]::before { background: var(--good); box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 30%, transparent); }
+#event-status[data-state="bad"]::before { background: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 30%, transparent); }
+
+.activity-feed {
+  margin-top: 10px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+.activity-empty { color: var(--muted); font-size: 12px; padding: 18px 6px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+.activity-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  display: grid;
+  gap: 6px;
+}
+.activity-card.kind-start { border-left: 3px solid var(--accent); }
+.activity-card.kind-retry { border-left: 3px solid #b88300; }
+.activity-card.kind-done { border-left: 3px solid var(--good); }
+.activity-card.kind-error { border-left: 3px solid var(--danger); }
+.activity-card.kind-ui { border-left: 3px dashed var(--muted); background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+.activity-card .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.activity-card .head .op { font-weight: 600; }
+.activity-card .head .time { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.activity-card .summary { font-size: 12px; line-height: 1.5; }
+.activity-card .summary code, .activity-card .summary kbd {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+}
+.activity-card .summary kbd { color: var(--accent); }
+.activity-card details { margin-top: 4px; }
+.activity-card details summary { cursor: pointer; font-size: 11px; color: var(--muted); }
+.activity-card details pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 .card {
   background: var(--card);
@@ -133,7 +232,10 @@ footer {
   font-size: 12px;
   color: var(--muted);
   border-top: 1px solid var(--line);
-  margin-top: 12px;
+  max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 24px;
 }
 footer code { font-size: 12px; }
 

@@ -15,6 +15,9 @@ const updateDiff = $('#update-diff');
 const lookupOutput = $('#lookup-output');
 
 const healthStatus = $('#health-status');
+const activityFeed = $('#activity-feed');
+const eventStatus = $('#event-status');
+const eventClear = $('#event-clear');
 
 // Cached agent proposals so the Confirm button can re-send the exact payload.
 const state = {
@@ -153,6 +156,7 @@ createForm.addEventListener('click', async (event) => {
     showOutput(createOutput, 'SKU and Title are required.', true);
     return;
   }
+  logUiEvent('create.preview', `Operator clicked <kbd>Generate Preview</kbd> for SKU <code>${data.sku}</code>`);
   setBusyAll(true);
   try {
     const result = await callJson('/api/listing', {
@@ -193,6 +197,7 @@ createPreviewBox.addEventListener('click', async (event) => {
   showOutput(createOutput, 'Publishing…');
   try {
     const data = formData(createForm);
+    logUiEvent('create.confirm', `Operator clicked <kbd>Confirm &amp; Publish</kbd> for SKU <code>${data.sku}</code>`);
     const result = await callJson('/api/listing', {
       method: 'POST',
       body: JSON.stringify({ ...data, payload: state.create.payload, skipOptimize: true, dryRun: false }),
@@ -248,6 +253,7 @@ lookupForm.addEventListener('click', async (event) => {
   updateShell.hidden = true;
   const sku = (formData(lookupForm).sku || '').trim();
   if (!sku) return;
+  logUiEvent('update.query', `Operator queried SKU <code>${sku}</code>`);
   setBusyAll(true);
   try {
     const result = await callJson(`/api/product/${encodeURIComponent(sku)}`);
@@ -285,6 +291,7 @@ updateForm.addEventListener('click', async (event) => {
   if (!state.update.sku) return;
   hideOutput(lookupOutput);
   updatePreviewBox.hidden = true;
+  logUiEvent('update.preview', `Operator clicked <kbd>Generate Preview</kbd> for <code>${state.update.sku}</code>`);
   setBusyAll(true);
   try {
     const data = formData(updateForm);
@@ -326,6 +333,7 @@ updatePreviewBox.addEventListener('click', async (event) => {
   showOutput(lookupOutput, 'Publishing…');
   try {
     const data = formData(updateForm);
+    logUiEvent('update.confirm', `Operator clicked <kbd>Confirm &amp; Publish</kbd> for <code>${state.update.sku}</code>`);
     const result = await callJson(`/api/product/${encodeURIComponent(state.update.sku)}/update`, {
       method: 'POST',
       body: JSON.stringify({ ...data, payload: state.update.payload, skipOptimize: true, dryRun: false }),
@@ -352,3 +360,149 @@ updatePreviewBox.addEventListener('click', async (event) => {
     healthStatus.textContent = String(err?.message || err);
   }
 })();
+
+// ---------------- Live agent activity ----------------
+
+const fmtTime = (t) => new Date(t).toLocaleTimeString(undefined, { hour12: false });
+
+function operationLabel(operation) {
+  const map = {
+    optimize_product_listing: 'Optimize listing',
+    build_product_payload: 'Build payload',
+    search_products: 'Search BigCommerce',
+    create_product: 'Create product',
+    update_product: 'Update product',
+    publish_product_listing: 'Publish flow',
+    list_price_lists: 'List price lists',
+    get_wholesale_price: 'Read wholesale price',
+    set_wholesale_price: 'Write wholesale price',
+  };
+  return map[operation] || operation;
+}
+
+function summarizeStart(event) {
+  const input = event.input || {};
+  const product = input.product || {};
+  const sku = product.sku || product.stock_number || input.sku;
+  const op = event.operation;
+  const bits = [];
+  if (sku) bits.push(`SKU <code>${sku}</code>`);
+  if (op === 'publish_product_listing') {
+    bits.push(input.dry_run === false ? 'live publish' : 'dry run');
+    if (input.skip_optimize) bits.push('skip optimize');
+    if (input.wholesale_price != null && input.wholesale_price !== '') bits.push(`wholesale $${Number(input.wholesale_price).toFixed(2)}`);
+  } else if (op === 'set_wholesale_price') {
+    bits.push(`$${Number(input.wholesale_price).toFixed(2)} on list ${input.price_list_id || 2}`);
+  }
+  return bits.length ? bits.join(' · ') : 'Calling agent…';
+}
+
+function summarizeDone(event) {
+  const out = event.output || {};
+  const op = event.operation;
+  const bits = [];
+  if (op === 'publish_product_listing') {
+    if (out.dry_run) bits.push('preview ready');
+    else if (out.mode) bits.push(`${out.mode} #${out.external_product_id || '?'}`);
+    if (out.optimization?.title) bits.push(`title: ${truncate(out.optimization.title, 80)}`);
+    if (Array.isArray(out.payload?.categories)) bits.push(`${out.payload.categories.length} categories`);
+    if (out.payload?.brand_id) bits.push(`brand id ${out.payload.brand_id}`);
+    if (out.wholesale && out.wholesale.price != null) {
+      bits.push(`wholesale $${Number(out.wholesale.price).toFixed(2)}${out.wholesale.ok === false ? ' (failed)' : ''}`);
+    }
+  } else if (op === 'search_products') {
+    const products = out.products || [];
+    bits.push(`${products.length} match${products.length === 1 ? '' : 'es'}`);
+    if (products[0]?.id) bits.push(`#${products[0].id}`);
+  } else if (op === 'list_price_lists') {
+    bits.push(`${(out.price_lists || []).length} lists`);
+  } else if (op === 'get_wholesale_price') {
+    if (out.found) bits.push(`$${out.record?.price ?? '?'}`);
+    else bits.push('no record');
+  } else if (op === 'set_wholesale_price') {
+    bits.push(`list ${out.price_list_id} variant ${out.variant_id}`);
+  } else if (op === 'create_product' || op === 'update_product') {
+    bits.push(`#${out.external_product_id || '?'}`);
+  }
+  if (event.duration_ms != null) bits.push(`${(event.duration_ms / 1000).toFixed(2)}s`);
+  return bits.length ? bits.join(' · ') : 'done';
+}
+
+function truncate(value, max = 80) {
+  const text = String(value || '');
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function renderEventCard(event, kind, summary, body) {
+  const card = document.createElement('div');
+  card.className = `activity-card kind-${kind}`;
+  const head = document.createElement('div');
+  head.className = 'head';
+  const opEl = document.createElement('span');
+  opEl.className = 'op';
+  opEl.textContent = operationLabel(event.operation || event.type);
+  const timeEl = document.createElement('span');
+  timeEl.className = 'time';
+  timeEl.textContent = fmtTime(event.t || Date.now());
+  head.append(opEl, timeEl);
+  card.appendChild(head);
+  const summaryEl = document.createElement('div');
+  summaryEl.className = 'summary';
+  summaryEl.innerHTML = summary;
+  card.appendChild(summaryEl);
+  if (body) {
+    const details = document.createElement('details');
+    const summaryToggle = document.createElement('summary');
+    summaryToggle.textContent = 'Show payload';
+    const pre = document.createElement('pre');
+    pre.textContent = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+    details.append(summaryToggle, pre);
+    card.appendChild(details);
+  }
+  // Newest at top.
+  const empty = activityFeed.querySelector('.activity-empty');
+  if (empty) empty.remove();
+  activityFeed.prepend(card);
+  while (activityFeed.children.length > 60) activityFeed.lastChild.remove();
+}
+
+function logUiEvent(operation, summary, body) {
+  renderEventCard({ operation: `ui:${operation}`, t: Date.now() }, 'ui', summary, body);
+}
+
+function setEventStatus(state, text) {
+  eventStatus.dataset.state = state;
+  eventStatus.textContent = text;
+}
+
+eventClear.addEventListener('click', () => {
+  activityFeed.innerHTML = '<div class="activity-empty">Cleared.</div>';
+});
+
+let eventSource;
+function connectEvents() {
+  if (eventSource) eventSource.close();
+  setEventStatus('', 'connecting…');
+  eventSource = new EventSource('/api/events');
+  eventSource.addEventListener('open', () => setEventStatus('ok', 'live'));
+  eventSource.addEventListener('error', () => setEventStatus('bad', 'reconnecting…'));
+  eventSource.addEventListener('message', (msg) => {
+    let data;
+    try { data = JSON.parse(msg.data); } catch { return; }
+    if (data.type === 'agent_call_start') {
+      renderEventCard(data, 'start', `→ ${summarizeStart(data)}`, data.input);
+    } else if (data.type === 'agent_retry') {
+      renderEventCard(
+        data,
+        'retry',
+        `↻ retry ${data.attempt} <code>${data.message ? truncate(data.message, 60) : data.status || ''}</code>`,
+        data,
+      );
+    } else if (data.type === 'agent_call_done') {
+      renderEventCard(data, 'done', `✓ ${summarizeDone(data)}`, data.output);
+    } else if (data.type === 'agent_call_error') {
+      renderEventCard(data, 'error', `✗ ${truncate(data.message || 'failed', 200)}`, data.body || data);
+    }
+  });
+}
+connectEvents();

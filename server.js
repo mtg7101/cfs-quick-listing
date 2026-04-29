@@ -24,7 +24,7 @@ function loadDotenv(file) {
 loadDotenv(path.join(__dirname, '.env'));
 
 const express = require('express');
-const { callAgent } = require('./lib/agent');
+const { callAgent, events } = require('./lib/agent');
 
 const app = express();
 app.disable('x-powered-by');
@@ -71,6 +71,28 @@ function defaultChannel() {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'cfs-quick-listing', port: PORT });
+});
+
+// Server-sent events: every agent call emits start / retry / done / error
+// here. The right-hand "Agent activity" pane subscribes to render them live.
+app.get('/api/events', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders?.();
+  res.write(`: connected ${Date.now()}\n\n`);
+  const send = (event) => {
+    try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch { /* client gone */ }
+  };
+  events.on('event', send);
+  const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+  req.on('close', () => {
+    clearInterval(ping);
+    events.off('event', send);
+  });
 });
 
 app.post('/api/listing', async (req, res) => {
